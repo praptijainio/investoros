@@ -7,14 +7,13 @@ from google import genai
 from google.genai import types
 import edge_tts
 import asyncio
-import nest_asyncio
+import concurrent.futures
 import pdfplumber
 import io
 import hashlib
 import json
 import os, sys
 
-nest_asyncio.apply()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from scripts.csv_client import get_all_funds
@@ -59,12 +58,9 @@ def speak(text, voice_key="Neerja — Indian English, Expressive (recommended)")
             if chunk["type"] == "audio":
                 chunks.append(chunk["data"])
         return b"".join(chunks)
-    try:
-        return asyncio.run(_run())
-    except Exception:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(_run())
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, _run())
+        return future.result(timeout=30)
 
 
 def transcribe(client, audio_bytes):

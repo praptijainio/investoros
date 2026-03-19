@@ -5,14 +5,14 @@ Run: streamlit run app.py
 import streamlit as st
 from google import genai
 from google.genai import types
-import edge_tts
-import asyncio
-import concurrent.futures
 import pdfplumber
 import io
 import hashlib
 import json
 import os, sys
+import subprocess
+import shutil
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
@@ -51,16 +51,28 @@ VOICE_OPTIONS = {
 
 def speak(text, voice_key="Neerja — Indian English, Expressive (recommended)"):
     voice, rate = VOICE_OPTIONS.get(voice_key, ("en-IN-NeerjaExpressiveNeural", "-5%"))
-    async def _run():
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        chunks = []
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                chunks.append(chunk["data"])
-        return b"".join(chunks)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(asyncio.run, _run())
-        return future.result(timeout=30)
+    edge_cmd = shutil.which("edge-tts")
+    if not edge_cmd:
+        return None
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        result = subprocess.run(
+            [edge_cmd, "--voice", voice, f"--rate={rate}", "--text", text, "--write-media", tmp_path],
+            capture_output=True, timeout=30
+        )
+        if result.returncode == 0:
+            with open(tmp_path, "rb") as f:
+                return f.read()
+        return None
+    except Exception:
+        return None
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 def transcribe(client, audio_bytes):
